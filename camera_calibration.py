@@ -8,6 +8,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+import pickle
 
 def display_images(images, titles = None, n_cols = 2, fig_size = (20, 10),
     write_path = None):
@@ -43,14 +44,15 @@ def display_images(images, titles = None, n_cols = 2, fig_size = (20, 10),
     
     # Create the subplot:
     f, axes = plt.subplots(n_rows, n_cols, figsize = fig_size, squeeze = False)
-    
+    f.tight_layout()
+
     # Iterate through all images:
     for i, img in enumerate(images):
         id_row = i // n_cols
         id_col = i % n_cols
         # Check channel depth of the image to display it properly:
-        if img.shape[2] == 1:
-            axes[id_row, id_col].imshow(img, cmap = 'gray')
+        if (len(img.shape) < 3) or (img.shape[2] == 1):
+            axes[id_row, id_col].imshow(img.squeeze(), cmap = 'gray')
         else:
             axes[id_row, id_col].imshow(img)
         # Display title in a fontsize dependent on the figure size:
@@ -60,10 +62,7 @@ def display_images(images, titles = None, n_cols = 2, fig_size = (20, 10),
     for i in range(len(images), n_rows * n_cols): 
         id_row = i // n_cols
         id_col = i % n_cols
-        print(img_size)
         white = np.ones(img_size)
-        print(white)
-        print(white.shape)
         axes[id_row, id_col].imshow(white)
 
     if write_path is not None:
@@ -142,6 +141,10 @@ if __name__ == '__main__':
         images.append(mpimg.imread(f_name))
 
     ret, M_cam, dist_coeff = get_distortion_params(images, (9, 6))
+
+    with open('calibration_params.pkl', 'wb') as pkl:
+        pickle.dump(M_cam, pkl)
+        pickle.dump(dist_coeff, pkl)
 
     test_images = [images[0], images[3], images[11], images[17]]
     to_display = []
