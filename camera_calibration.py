@@ -24,8 +24,6 @@ def display_images(images, titles = None, n_cols = 2, fig_size = (20, 10),
     Returns:    Figure and axes, in case further work is required on them.
     '''
 
-    import matplotlib.pyplot as plt
-    
     if titles is None:
         titles = ["" for i in range(len(images))]
     

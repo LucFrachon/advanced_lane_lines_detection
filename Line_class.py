@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import numpy as np
+
+
 class Line(object):
-    def __init__(self):
+    def __init__(self, color, last_n = 10):
+        '''
+        color: color in which to display the line
+        last_n: int, how many previous fits should be remembered?
+        '''
+
+        # Color to use when displaying the line:
+        self.color = color
         # was the line detected in the last iteration?
         self.detected = False  
         # x values of the last n fits of the line
