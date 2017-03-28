@@ -308,7 +308,7 @@ def window_search(binary_map, file_index = None):
     leftx_current = leftx_base
     rightx_current = rightx_base
     # Set the width of the windows +/- margin
-    margin = 150
+    margin = 100
     # Set minimum number of pixels found to recenter window
     minpix = 20
     # Create empty lists to receive left and right lane pixel indices
@@ -366,13 +366,14 @@ def window_search(binary_map, file_index = None):
     
 
     # Fit a second order polynomial to each
-    _, _ = line_left.fit_poly()
-    _, _ = line_right.fit_poly()
-
-    # Get all y values (essentially, each pixel along the y axis):
+     # Get all y values (essentially, each pixel along the y axis):
     ploty = np.linspace(0, img_size[1] - 1, img_size[1])
-    left_fitx = line_left.predict_poly(ploty)
-    right_fitx = line_right.predict_poly(ploty)
+
+    _, _ = line_left.fit_poly(ploty)
+    _, _ = line_right.fit_poly(ploty)
+
+    left_fitx = line_left.predict_avg_poly(ploty)
+    right_fitx = line_right.predict_avg_poly(ploty)
 
     # left_fit = np.polyfit(lefty, leftx, 2)  # Modify with call to Line()
     # right_fit = np.polyfit(righty, rightx, 2)
@@ -382,7 +383,7 @@ def window_search(binary_map, file_index = None):
 
 
     out_img[line_left.all_y, line_left.all_x] = [255, 0, 0]
-    out_img[right_left.all_y, line_right.all_x] = [0, 255, 0]
+    out_img[line_right.all_y, line_right.all_x] = [0, 255, 0]
 
     # Display the lines on the image:
     lanes_img = np.zeros_like(out_img)
@@ -390,7 +391,7 @@ def window_search(binary_map, file_index = None):
     lanes_img[np.int32(ploty), np.int32(right_fitx)] = [255, 255, 0]
     out_img = cv2.addWeighted(out_img, 1, lanes_img, 1, 0.0)
 
-    return left_fit, right_fit, out_img
+    return out_img
 
 
 def search_around_line(binary_map, left_fit, right_fit, display = True,
@@ -644,14 +645,15 @@ if __name__ == '__main__':
     #                               [559, 482],
     #                               [721, 482], 
     #                               [1280, 720]])
-    thresh_x = (20, 100)
+
+    thresh_x = (30, 100)
     thresh_h = (18, 35)
-    thresh_l = (170, 255)
-    thresh_s = (120, 255)
+    thresh_l = (100, 255)
+    thresh_s = (90, 255)
 
     # Global Line class variables:
-    line_left = Line([0, 255, 0], 10, 0.2)
-    line_right = Line([255, 0, 0], 10, 0.2)
+    line_left = Line([0, 255, 0], 5, pos_tol = .8, rad_tol = 0.5)
+    line_right = Line([255, 0, 0], 5, pos_tol = .8, rad_tol = 0.5)
 
 
 
@@ -664,11 +666,11 @@ if __name__ == '__main__':
     clip_in = VideoFileClip('short_video.mp4')
     clip_out = clip_in.fl_image(lambda x: lambda_wrapper(x, M_cam, dist_coef,
         M_warp, dest_vertices, file_index = None, sub_size_ratio = .4))
-    clip_out.write_videofile('short_video_test.mp4')
+    clip_out.write_videofile('short_video_test.mp4', audio = False)
 
     # file_index = 0
     
-    # path_names = glob.glob('./challenge_test_images/*.jpg')
+    # path_names = glob.glob('./test_images/shadows.jpg')
     # for path in path_names:
     #     # Isolate file name without extension:
     #     file_name = path.split('/')[-1].split('.')[0]
@@ -687,17 +689,17 @@ if __name__ == '__main__':
     #     # composed = np.copy(img)
     #     # composed[:216, :384, :] = np.dstack((binary_map_mini, binary_map_mini, binary_map_mini))
 
-    #     left_fit, right_fit, img_lines = window_search(binary_map, 
+    #     img_lines = window_search(binary_map, 
     #         file_index = None)
     #     # convolutional_search(binary_map, file_index = file_index)
     #     composed = compose_image([img, img_lines], sub_size_ratio = .4)
     #     f = plt.figure(figsize = (12.80,7.20), dpi = 100)
     #     plt.imshow(composed)
     #     f.savefig('./test_images/' + file_name + '_composed.png')
-    #     file_index += 1
+    #     # file_index += 1
 
     #     display_images([composed], n_cols = 1, 
-    #         write_path = './challenge_test_images/' + file_name + '_composed.png')
+    #         write_path = './test_images/' + file_name + '_composed.png')
         
 
 
