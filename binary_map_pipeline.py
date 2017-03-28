@@ -221,7 +221,7 @@ def combine_maps(maps):
 
 
 
-def binary_map_pipeline(image, M_cam, dist_coef, M_warp, dest_vertices):
+def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
     '''
     Takes an image and distortion parameter M_cam and dist_coeff. Applies 
     correction for lens distortion, warps it to bird's eye view using M_warp and 
@@ -355,20 +355,34 @@ def window_search(binary_map, file_index = None):
     right_lane_inds = np.concatenate(right_lane_inds)
 
     # Extract left and right line pixel positions
-    leftx = nonzerox[left_lane_inds]
-    lefty = nonzeroy[left_lane_inds] 
-    rightx = nonzerox[right_lane_inds]
-    righty = nonzeroy[right_lane_inds] 
+    # leftx = nonzerox[left_lane_inds]   ## Modify with call to Line()
+    # lefty = nonzeroy[left_lane_inds] 
+    # rightx = nonzerox[right_lane_inds]
+    # righty = nonzeroy[right_lane_inds] 
+    line_left.all_x = nonzerox[left_lane_inds]
+    line_left.all_y = nonzeroy[left_lane_inds]
+    line_right.all_x = nonzerox[right_lane_inds]
+    line_right.all_y = nonzeroy[right_lane_inds]
+    
 
     # Fit a second order polynomial to each
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
-    ploty = np.linspace(0, img_size[1] - 1, img_size[1] )
-    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+    _, _ = line_left.fit_poly()
+    _, _ = line_right.fit_poly()
 
-    out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-    out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 255, 0]
+    # Get all y values (essentially, each pixel along the y axis):
+    ploty = np.linspace(0, img_size[1] - 1, img_size[1])
+    left_fitx = line_left.predict_poly(ploty)
+    right_fitx = line_right.predict_poly(ploty)
+
+    # left_fit = np.polyfit(lefty, leftx, 2)  # Modify with call to Line()
+    # right_fit = np.polyfit(righty, rightx, 2)
+
+    # left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+    # right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+
+    out_img[line_left.all_y, line_left.all_x] = [255, 0, 0]
+    out_img[right_left.all_y, line_right.all_x] = [0, 255, 0]
 
     # Display the lines on the image:
     lanes_img = np.zeros_like(out_img)
@@ -602,8 +616,8 @@ def compose_image(images, sub_size_ratio = 0.3):
 
 def lambda_wrapper(img, M_cam, dist_coef, M_warp, dest_vertices, 
     file_index = None, sub_size_ratio = .4):
-    bin_map = binary_map_pipeline(img, M_cam, dist_coef, M_warp, dest_vertices)[0]
-    left_fit, right_fit, img_lines = window_search(bin_map, file_index = None)
+    bin_map = global_binary_map(img, M_cam, dist_coef, M_warp, dest_vertices)[0]
+    img_lines = window_search(bin_map, file_index = None)
     composed = compose_image([img, img_lines], sub_size_ratio = .4)
     return composed
 
@@ -636,8 +650,8 @@ if __name__ == '__main__':
     thresh_s = (120, 255)
 
     # Global Line class variables:
-    line_left = Line([0, 255, 0], 10)
-    line_right = Line([255, 0, 0], 10)
+    line_left = Line([0, 255, 0], 10, 0.2)
+    line_right = Line([255, 0, 0], 10, 0.2)
 
 
 
@@ -662,10 +676,10 @@ if __name__ == '__main__':
     #     img = mpimg.imread(path)
 
     #     # combined_map, img_undist, hls, warped, warped_s, \
-    #     #     x_binary, yellows, lightness, saturation = binary_map_pipeline(img, 
+    #     #     x_binary, yellows, lightness, saturation = global_binary_map(img, 
     #     #                                 M_cam, dist_coef, M_warp, dest_vertices)
 
-    #     binary_map, _, _, _, _, _, _, _, _ = binary_map_pipeline(img, M_cam, 
+    #     binary_map, _, _, _, _, _, _, _, _ = global_binary_map(img, M_cam, 
     #     dist_coef, M_warp, dest_vertices)
     #     # binary_map_mini = scale_map(cv2.resize(binary_map, (384, 216)), max_value = 255, 
     #     #     dtype = 'uint8')
