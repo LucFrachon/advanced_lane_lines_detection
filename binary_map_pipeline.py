@@ -282,7 +282,7 @@ def binary_map_pipeline(image, M_cam, dist_coef, M_warp, dest_vertices):
 
 #     return image_out, binary_map
 
-def window_search(binary_map, display = True, file_index = None):
+def window_search(binary_map, file_index = None):
     '''
     binary_map is a warped binary map, one channel only.
     '''
@@ -370,6 +370,77 @@ def window_search(binary_map, display = True, file_index = None):
     out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
     out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 255, 0]
 
+    # Display the lines on the image:
+    lanes_img = np.zeros_like(out_img)
+    lanes_img[np.int32(ploty), np.int32(left_fitx)] = [255, 255, 0]
+    lanes_img[np.int32(ploty), np.int32(right_fitx)] = [255, 255, 0]
+    out_img = cv2.addWeighted(out_img, 1, lanes_img, 1, 0.0)
+
+    return left_fit, right_fit, out_img
+
+
+def search_around_line(binary_map, left_fit, right_fit, display = True,
+    file_index = None):
+
+    # It's now much easier to find line pixels!
+    nonzero = binary_map.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+    margin = 100
+    left_lane_inds = ((nonzerox > (left_fit[0] * (nonzeroy**2) + \
+        left_fit[1] * nonzeroy + left_fit[2] - margin)) & \
+        (nonzerox < (left_fit[0] * (nonzeroy**2) + left_fit[1] * nonzeroy + \
+        left_fit[2] + margin))) 
+    right_lane_inds = ((nonzerox > (right_fit[0] * (nonzeroy**2) + \
+        right_fit[1] * nonzeroy + right_fit[2] - margin)) & \
+        (nonzerox < (right_fit[0] * (nonzeroy**2) + right_fit[1] * nonzeroy + \
+        right_fit[2] + margin)))  
+
+    # Again, extract left and right line pixel positions
+    leftx = nonzerox[left_lane_inds]
+    lefty = nonzeroy[left_lane_inds] 
+    rightx = nonzerox[right_lane_inds]
+    righty = nonzeroy[right_lane_inds]
+    # Fit a second order polynomial to each
+    left_fit = np.polyfit(lefty, leftx, 2)
+    right_fit = np.polyfit(righty, rightx, 2)
+    # Generate x and y values for plotting
+    ploty = np.linspace(0, binary_map.shape[0] - 1, binary_map.shape[0])
+    left_fitx = left_fit[0] * ploty**2 + left_fit[1] * ploty + left_fit[2]
+    right_fitx = right_fit[0] * ploty**2 + right_fit[1] * ploty + right_fit[2]
+
+    # Visualize:
+
+    # Create an image to draw on and an image to show the selection window
+    out_img = np.dstack((binary_map, binary_map, binary_map)) * 255
+    window_img = np.zeros_like(out_img)
+    # Color in left and right line pixels
+    out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+    out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 255, 0]
+
+    # Generate a polygon to illustrate the search window area
+    # And recast the x and y points into usable format for cv2.fillPoly()
+    left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, 
+        ploty]))])
+    left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + \
+        margin, ploty])))])
+    left_line_pts = np.hstack((left_line_window1, left_line_window2))
+    right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, 
+        ploty]))])
+    right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + \
+        margin, ploty])))])
+    right_line_pts = np.hstack((right_line_window1, right_line_window2))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(window_img, np.int_([left_line_pts]), (0,255, 0))
+    cv2.fillPoly(window_img, np.int_([right_line_pts]), (0,255, 0))
+    result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+    plt.imshow(result)
+    plt.plot(left_fitx, ploty, color='yellow')
+    plt.plot(right_fitx, ploty, color='yellow')
+    plt.xlim(0, 1280)
+    plt.ylim(720, 0)    
+
     # Save the resulting plot as a Numpy array for further use:
     fig = plt.figure(figsize = (1280 / 96, 720 / 96), dpi = 96)
     canvas = FigureCanvasAgg(fig)
@@ -384,66 +455,62 @@ def window_search(binary_map, display = True, file_index = None):
     plt.ylim(720, 0)
     canvas.draw()
 
-    image_out = np.fromstring(canvas.tostring_rgb(), dtype = 'uint8').reshape(
-        (h, w, 3))
-    if file_index is not None:
-        plt.savefig('./test_images/polylines_test_' + str(file_index) + '.png')
-
     return left_fit, right_fit, image_out
 
 
-def window_mask(width, height, center, level):
-    output = np.zeros((img_size[1], img_size[0]), dtype = 'uint8')
-    output[int(img_size[1] - (level + 1) * height) : \
-        int(img_size[1] - level * height),
-        max(0, int(center - width / 2)) : min(int(center + width / 2),
-            img_size[0])] = 1
-    return output
+
+# def window_mask(width, height, center, level):
+#     output = np.zeros((img_size[1], img_size[0]), dtype = 'uint8')
+#     output[int(img_size[1] - (level + 1) * height) : \
+#         int(img_size[1] - level * height),
+#         max(0, int(center - width / 2)) : min(int(center + width / 2),
+#             img_size[0])] = 1
+#     return output
 
 
-def find_window_centroids(bin_map, window_width, window_height, margin):
+# def find_window_centroids(bin_map, window_width, window_height, margin):
     
-    window_centroids = [] # Store the (left,right) window centroid positions per level
-    window = np.ones(window_width) # Create our window template that we will use for convolutions
+#     window_centroids = [] # Store the (left,right) window centroid positions per level
+#     window = np.ones(window_width) # Create our window template that we will use for convolutions
     
-    # First find the two starting positions for the left and right lane by using np.sum to get the vertical image slice
-    # and then np.convolve the vertical image slice with the window template 
+#     # First find the two starting positions for the left and right lane by using np.sum to get the vertical image slice
+#     # and then np.convolve the vertical image slice with the window template 
     
-    # Sum quarter bottom of image to get slice, could use a different ratio
-    l_sum = np.sum(bin_map[int(3 * img_size[1] / 4):,
-        :int(img_size[0] / 2)], axis = 0)
-    l_center = np.argmax(np.convolve(window,l_sum)) - window_width / 2
-    r_sum = np.sum(bin_map[int(3 * img_size[1] / 4):,
-        int(img_size[0] / 2):], axis = 0)
-    r_center = np.argmax(np.convolve(window, r_sum)) - \
-        window_width / 2 + int(img_size[0] / 2)
+#     # Sum quarter bottom of image to get slice, could use a different ratio
+#     l_sum = np.sum(bin_map[int(3 * img_size[1] / 4):,
+#         :int(img_size[0] / 2)], axis = 0)
+#     l_center = np.argmax(np.convolve(window,l_sum)) - window_width / 2
+#     r_sum = np.sum(bin_map[int(3 * img_size[1] / 4):,
+#         int(img_size[0] / 2):], axis = 0)
+#     r_center = np.argmax(np.convolve(window, r_sum)) - \
+#         window_width / 2 + int(img_size[0] / 2)
     
-    # Add what we found for the first layer
-    window_centroids.append((l_center, r_center))
+#     # Add what we found for the first layer
+#     window_centroids.append((l_center, r_center))
     
-    # Go through each layer looking for max pixel locations
-    for level in range(1, int(img_size[1] / window_height)):
-        # convolve the window into the vertical slice of the image
-        image_layer = np.sum(bin_map[int(img_size[1] - (level + 1) * \
-            window_height) : \
-            int(img_size[1] - level * window_height), :], axis = 0)
-        conv_signal = np.convolve(window, image_layer)
-        # Find the best left centroid by using past left center as a reference
-        # Use window_width/2 as offset because convolution signal reference is at right side of window, not center of window
-        offset = window_width / 2
-        l_min_index = int(max(l_center + offset - margin, 0))
-        l_max_index = int(min(l_center + offset + margin, img_size[0]))
-        l_center = np.argmax(conv_signal[l_min_index : l_max_index]) + \
-            l_min_index - offset
-        # Find the best right centroid by using past right center as a reference
-        r_min_index = int(max(r_center + offset - margin, 0))
-        r_max_index = int(min(r_center + offset + margin, img_size[0]))
-        r_center = np.argmax(conv_signal[r_min_index : r_max_index]) + \
-            r_min_index - offset
-        # Add what we found for that layer
-        window_centroids.append((l_center, r_center))
+#     # Go through each layer looking for max pixel locations
+#     for level in range(1, int(img_size[1] / window_height)):
+#         # convolve the window into the vertical slice of the image
+#         image_layer = np.sum(bin_map[int(img_size[1] - (level + 1) * \
+#             window_height) : \
+#             int(img_size[1] - level * window_height), :], axis = 0)
+#         conv_signal = np.convolve(window, image_layer)
+#         # Find the best left centroid by using past left center as a reference
+#         # Use window_width/2 as offset because convolution signal reference is at right side of window, not center of window
+#         offset = window_width / 2
+#         l_min_index = int(max(l_center + offset - margin, 0))
+#         l_max_index = int(min(l_center + offset + margin, img_size[0]))
+#         l_center = np.argmax(conv_signal[l_min_index : l_max_index]) + \
+#             l_min_index - offset
+#         # Find the best right centroid by using past right center as a reference
+#         r_min_index = int(max(r_center + offset - margin, 0))
+#         r_max_index = int(min(r_center + offset + margin, img_size[0]))
+#         r_center = np.argmax(conv_signal[r_min_index : r_max_index]) + \
+#             r_min_index - offset
+#         # Add what we found for that layer
+#         window_centroids.append((l_center, r_center))
 
-    return window_centroids
+#     return window_centroids
 
 
 # def convolutional_search(binary_map, display = True, file_index = 0):
@@ -553,16 +620,16 @@ if __name__ == '__main__':
     img_size = (1280, 720)
 
     # For video 1:
-    # source_vertices = np.float32([[0, 720],
-    #                               [553, 460],
-    #                               [727, 460],
-    #                               [1280, 720]])
+    source_vertices = np.float32([[0, 670],
+                                  [538, 460],
+                                  [752, 460],
+                                  [1280, 670]])
 
     #For video 2:
-    source_vertices = np.float32([[0, 720],
-                                  [559, 482],
-                                  [721, 482], 
-                                  [1280, 720]])
+    # source_vertices = np.float32([[0, 720],
+    #                               [559, 482],
+    #                               [721, 482], 
+    #                               [1280, 720]])
     thresh_x = (20, 100)
     thresh_h = (18, 35)
     thresh_l = (170, 255)
@@ -580,10 +647,10 @@ if __name__ == '__main__':
 
     # Load movie file to work on:
 
-    clip_in = VideoFileClip('project_video.mp4')
+    clip_in = VideoFileClip('short_video.mp4')
     clip_out = clip_in.fl_image(lambda x: lambda_wrapper(x, M_cam, dist_coef,
         M_warp, dest_vertices, file_index = None, sub_size_ratio = .4))
-    clip_out.write_videofile('project_video_test.mp4')
+    clip_out.write_videofile('short_video_test.mp4')
 
     # file_index = 0
     
