@@ -6,8 +6,8 @@ from moviepy.editor import VideoFileClip
 import math
 import os
 
-video_file = './challenge_video.mp4'
-images_folder = './challenge_test_images/'
+video_file = './short_video.mp4'
+images_folder = './short_test_images/'
 
 def frange(start, stop, step = 1.):
     i = start
@@ -17,7 +17,7 @@ def frange(start, stop, step = 1.):
 
 clip = VideoFileClip(video_file)
 
-for ts in frange(16., 17., 0.3):
-    clip.save_frame(images_folder + str(ts) + ".jpg", t = ts)
+for i, ts in enumerate(frange(0., 4., 0.1)):
+    clip.save_frame(images_folder + str(i) + ".jpg", t = ts)
 
 files = os.listdir(images_folder)

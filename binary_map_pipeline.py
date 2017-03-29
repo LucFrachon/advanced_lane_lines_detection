@@ -225,22 +225,28 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
     '''
     Takes an image and distortion parameter M_cam and dist_coeff. Applies 
     correction for lens distortion, warps it to bird's eye view using M_warp and 
-    dest_vertices, then builds a binary binary_map, combined from binary maps based on 
-    gradient and on color.
+    dest_vertices, then builds a binary binary_map, combined from binary maps 
+    based on gradient and on color.
     '''
 
     # Correct for camera distortion:
     img_undist = undistort_image(image, M_cam, dist_coef)
 
-    # Convert warped image to grayscale before passing to filters:
-    hls = cv2.cvtColor(img_undist, cv2.COLOR_RGB2HLS)
+
+    # # Convert warped image to HLS before passing to filters:
+    # hls = cv2.cvtColor(img_undist, cv2.COLOR_RGB2HLS)
 
     # Warp image to bird's eye view:
-    hls, warped = warp_image(hls, M_warp, 
+    img_undist, warped = warp_image(img_undist, M_warp, 
         inverse = False, lines = False, source_coords = source_vertices, 
         dest_coords = dest_vertices)
 
-    warped_s = warped[:,:,2]  # Isolate S channel for gradient calculations
+    # Equalize histogram: convert to HUV then to back RGB
+    warped_yuv = cv2.cvtColor(warped, cv2.COLOR_RGB2YCrCb)
+    warped_yuv[:, :, 0] = cv2.equalizeHist(warped_yuv[:, :, 0])
+    warped_hls = cv2.cvtColor(warped_yuv, cv2.COLOR_RGB2HLS)
+
+    warped_s = warped_hls[:,:,2]  # Isolate S channel for gradient calculations
 
     # Make binary maps from x gradient:
     x_binary, x_sobel  = make_grad_map(warped_s, orient = 'x', 
@@ -252,10 +258,10 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
 
     # Make binary maps from hue, lightness and saturation:
 
-    yellows = make_channel_map(warped, thresh = thresh_h, channel = 0, 
+    yellows = make_channel_map(warped_hls, thresh = thresh_h, channel = 0, 
         scale_to = 180)  # H-channel scaled to [0, 180] (not [0, 255])
-    lightness = make_channel_map(warped, thresh = thresh_l, channel = 1)
-    saturation = make_channel_map(warped, thresh = thresh_s, channel = 2)
+    lightness = make_channel_map(warped_hls, thresh = thresh_l, channel = 1)
+    saturation = make_channel_map(warped_hls, thresh = thresh_s, channel = 2)
 
     # Combine into a single binary binary_map:
     maps = {'grad_x': x_binary, 
@@ -267,20 +273,14 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
             'sat': saturation}
     combined_map = combine_maps(maps)
 
-    return combined_map, img_undist, hls, warped, warped_s, x_binary, yellows, \
+    return combined_map, img_undist, warped_hls, warped_s, x_binary, yellows, \
         lightness, saturation
 
 
-# def compose_image(image, M_cam, dist_coef, M_warp, dest_vertices):
 
-#     binary_map, _, _, _, _, _, _, _, _ = binary_map_pipeline(image, M_cam, 
-#         dist_coef, M_warp, dest_vertices)
-#     binary_map = scale_map(cv2.resize(binary_map, (384, 216)), max_value = 255, 
-#         dtype = 'uint8')
-#     image_out = np.copy(image)
-#     image_out[:216, :384, :] = np.dstack((binary_map, binary_map, binary_map))
+#*******************************************************************************
 
-#     return image_out, binary_map
+
 
 def window_search(binary_map, file_index = None):
     '''
@@ -646,10 +646,17 @@ if __name__ == '__main__':
     #                               [721, 482], 
     #                               [1280, 720]])
 
-    thresh_x = (30, 100)
-    thresh_h = (18, 35)
-    thresh_l = (100, 255)
-    thresh_s = (90, 255)
+    # # Without histogram equalization:
+    # thresh_x = (30, 100)
+    # thresh_h = (18, 35)
+    # thresh_l = (100, 255)
+    # thresh_s = (90, 255)
+
+    # With histogram equalization:
+    thresh_x = (50, 100)
+    thresh_h = (25, 35)
+    thresh_l = (240, 255)
+    thresh_s = (120, 255)  
 
     # Global Line class variables:
     line_left = Line([0, 255, 0], 5, pos_tol = .8, rad_tol = 0.5)
@@ -663,71 +670,58 @@ if __name__ == '__main__':
 
     # Load movie file to work on:
 
-    clip_in = VideoFileClip('short_video.mp4')
-    clip_out = clip_in.fl_image(lambda x: lambda_wrapper(x, M_cam, dist_coef,
-        M_warp, dest_vertices, file_index = None, sub_size_ratio = .4))
-    clip_out.write_videofile('short_video_test.mp4', audio = False)
+    # clip_in = VideoFileClip('short_video.mp4')
+    # clip_out = clip_in.fl_image(lambda x: lambda_wrapper(x, M_cam, dist_coef,
+    #     M_warp, dest_vertices, file_index = None, sub_size_ratio = .4))
+    # clip_out.write_videofile('short_video_test.mp4', audio = False)
 
-    # file_index = 0
+    file_index = 0
     
-    # path_names = glob.glob('./test_images/shadows.jpg')
-    # for path in path_names:
-    #     # Isolate file name without extension:
-    #     file_name = path.split('/')[-1].split('.')[0]
-    #     print("Processing ", file_name)
-    #     img = mpimg.imread(path)
+    path_names = glob.glob('./short_test_images/*.jpg')
+    for path in path_names:
+        # Isolate file name without extension:
+        file_name = path.split('/')[-1].split('.')[0]
+        print("Processing ", file_name)
+        img = mpimg.imread(path)
 
-    #     # combined_map, img_undist, hls, warped, warped_s, \
-    #     #     x_binary, yellows, lightness, saturation = global_binary_map(img, 
-    #     #                                 M_cam, dist_coef, M_warp, dest_vertices)
+        combined_map, img_undist, warped_hls, warped_s, \
+            x_binary, yellows, lightness, saturation = global_binary_map(img, 
+                                        M_cam, dist_coef, M_warp, dest_vertices)
 
-    #     binary_map, _, _, _, _, _, _, _, _ = global_binary_map(img, M_cam, 
-    #     dist_coef, M_warp, dest_vertices)
-    #     # binary_map_mini = scale_map(cv2.resize(binary_map, (384, 216)), max_value = 255, 
-    #     #     dtype = 'uint8')
+        # binary_map, _, _, _, _, _, _, _, _ = global_binary_map(img, M_cam, 
+        # dist_coef, M_warp, dest_vertices)
+        # binary_map_mini = scale_map(cv2.resize(binary_map, (384, 216)), max_value = 255, 
+        #     dtype = 'uint8')
 
-    #     # composed = np.copy(img)
-    #     # composed[:216, :384, :] = np.dstack((binary_map_mini, binary_map_mini, binary_map_mini))
+        # composed = np.copy(img)
+        # composed[:216, :384, :] = np.dstack((binary_map_mini, binary_map_mini, binary_map_mini))
 
-    #     img_lines = window_search(binary_map, 
-    #         file_index = None)
-    #     # convolutional_search(binary_map, file_index = file_index)
-    #     composed = compose_image([img, img_lines], sub_size_ratio = .4)
-    #     f = plt.figure(figsize = (12.80,7.20), dpi = 100)
-    #     plt.imshow(composed)
-    #     f.savefig('./test_images/' + file_name + '_composed.png')
-    #     # file_index += 1
+        img_lines = window_search(combined_map, 
+            file_index = None)
+        # convolutional_search(binary_map, file_index = file_index)
+        # composed = compose_image([img, img_lines], sub_size_ratio = .4)
+        # f = plt.figure(figsize = (12.80,7.20), dpi = 100)
+        # plt.imshow(composed)
+        # f.savefig('./test_images/' + file_name + '_composed.png')
+        # file_index += 1
 
-    #     display_images([composed], n_cols = 1, 
-    #         write_path = './test_images/' + file_name + '_composed.png')
+        # display_images([composed], n_cols = 1, 
+        #     write_path = './test_images/' + file_name + '_composed.png')
         
+        print(combined_map.shape)
 
-
-        # display_images([img, 
-        #                 img_undist, 
-        #                 warped_s,
-        #                 x_binary, 
-        #                 # y_binary,
-        #                 # mag_binary,
-        #                 # dir_binary,
-        #                 yellows,
-        #                 lightness,
-        #                 saturation,
-        #                 combined_map
-        #                 ], 
-        #                 titles = ["original", 
-        #                 "undistorted", 
-        #                 "warped Sat", 
-        #                 "grad_x",
-        #                 # "grad_y", 
-        #                 # "grad_magnitude", 
-        #                 # "grad_direction", 
-        #                 "yellows",
-        #                 "lightness",
-        #                 "saturation",
-        #                 "combined",
-        #                 ],
-        #     n_cols = 4 
-        #     , write_path = './test_images/' + file_name + '_results.png'
-        #     )
+        display_images([img, 
+                        warped_hls,
+                        warped_s,
+                        x_binary, 
+                        yellows,
+                        lightness,
+                        saturation,
+                        combined_map,
+                        img_lines
+                        ], 
+                        
+            n_cols = 4 
+            , write_path = './short_test_images/' + file_name + '_results.png'
+            )
 

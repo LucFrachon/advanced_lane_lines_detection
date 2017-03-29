@@ -28,6 +28,7 @@ def display_images(images, titles = None, n_cols = 2, fig_size = (20, 10),
         titles = ["" for i in range(len(images))]
     
     if len(titles) != len(images):
+        print(len(titles), len(images))
         print("titles and images should have the same number of elements")
         return
     

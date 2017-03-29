@@ -17,7 +17,6 @@ class Queue():
         return self.items == []
 
     def enqueue(self, item):
-        print(type(item), item.shape)
         if (item.shape == (self.width,)):
             self.items.insert(0, item)
         else:
@@ -116,7 +115,6 @@ class Line():
 
         self.detected = True
         self.last_n_fits.enqueue(fit)
-        print(type(curve_rad))
         self.last_n_radius.enqueue(np.array(curve_rad)[np.newaxis])
 
         # Don't let the queue exceed the maximum length:
@@ -184,11 +182,12 @@ class Line():
             if self.sanity_check():  # If coefficients seem sensible:
                 self.update_line(self.current_fit, self.current_curvature)
                 valid = True
+                self.frames_since_detection = 0
             else:
                 # self.update_line(self.last_n_fits.items[0], 
                 #     self.last_n_radius.items[0])
                 self.frames_since_detection += 1
-                print(self.frames_since_detection)
+                print("Missed frames:", self.frames_since_detection)
 
         return valid, self.current_fit
 
