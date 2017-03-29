@@ -643,17 +643,17 @@ if __name__ == '__main__':
     #                               [721, 482], 
     #                               [1280, 720]])
 
-    # # Without histogram equalization:
-    # thresh_x = (30, 100)
-    # thresh_h = (18, 35)
-    # thresh_l = (100, 255)
-    # thresh_s = (90, 255)
+    # Without histogram equalization:
+    thresh_x = (30, 100)
+    thresh_h = (18, 35)
+    thresh_l = (100, 255)
+    thresh_s = (90, 255)
 
     # With histogram equalization:
-    thresh_x = (50, 100)
-    thresh_h = (18, 23)  # Base = 180
-    thresh_l = (250, 255)
-    thresh_s = (120, 255)  
+    # thresh_x = (50, 100)
+    # thresh_h = (18, 23)  # Base = 180
+    # thresh_l = (250, 255)
+    # thresh_s = (120, 255)  
 
     # Global Line class variables:
     line_left = Line([0, 255, 0], 5, pos_tol = .8, rad_tol = 0.5)
