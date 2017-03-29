@@ -187,7 +187,8 @@ class Line():
                 # self.update_line(self.last_n_fits.items[0], 
                 #     self.last_n_radius.items[0])
                 self.frames_since_detection += 1
-                print("Missed frames:", self.frames_since_detection)
+                print("Frames since last good detection:", 
+                    self.frames_since_detection)
 
         return valid, self.current_fit
 

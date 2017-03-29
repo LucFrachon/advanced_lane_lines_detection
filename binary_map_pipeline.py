@@ -250,7 +250,7 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
 
     # Make binary maps from x gradient:
     x_binary, x_sobel  = make_grad_map(warped_s, orient = 'x', 
-        sobel_kernel = 7, thresh = thresh_x)
+        sobel_kernel = 21, thresh = thresh_x)
     # y_binary, y_sobel = make_grad_map(warped, orient = 'y', 
     #     sobel_kernel = 7, thresh = (10, 100))
     # mag_binary = make_grad_mag_map(x_sobel, y_sobel, thresh = (10, 100))
@@ -265,9 +265,6 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
 
     # Combine into a single binary binary_map:
     maps = {'grad_x': x_binary, 
-            # 'grad_y': y_binary,
-            # 'grad_mag': mag_binary,
-            # 'grad_dir': dir_binary,
             'hue': yellows,
             'light': lightness,
             'sat': saturation}
@@ -654,8 +651,8 @@ if __name__ == '__main__':
 
     # With histogram equalization:
     thresh_x = (50, 100)
-    thresh_h = (25, 35)
-    thresh_l = (240, 255)
+    thresh_h = (18, 23)  # Base = 180
+    thresh_l = (250, 255)
     thresh_s = (120, 255)  
 
     # Global Line class variables:
@@ -707,11 +704,11 @@ if __name__ == '__main__':
 
         # display_images([composed], n_cols = 1, 
         #     write_path = './test_images/' + file_name + '_composed.png')
-        
-        print(combined_map.shape)
 
         display_images([img, 
                         warped_hls,
+                        cv2.cvtColor(warped_hls, cv2.COLOR_RGB2HLS)[:,:,1],
+                        warped_hls[:,:,1],
                         warped_s,
                         x_binary, 
                         yellows,
@@ -720,6 +717,19 @@ if __name__ == '__main__':
                         combined_map,
                         img_lines
                         ], 
+                        titles = [
+                        "img", 
+                        "warped_hls",
+                        "warped l before equalization",
+                        "warped l after equalization",
+                        "warped_s",
+                        "x_binary", 
+                        "yellows",
+                        "lightness",
+                        "saturation",
+                        "combined_map",
+                        "img_lines"
+                        ],
                         
             n_cols = 4 
             , write_path = './short_test_images/' + file_name + '_results.png'
