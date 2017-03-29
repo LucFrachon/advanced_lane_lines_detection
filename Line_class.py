@@ -38,7 +38,8 @@ class Queue():
 
 
 class Line():
-    def __init__(self, color, last_n = 10, pos_tol = 0.2, rad_tol = 0.2):
+    def __init__(self, color, last_n = 5, search_n = 10, 
+        pos_tol = 0.2, rad_tol = 0.2):
         '''
         color:      color in which to display the line
         order:      polynomial order for fitted lines
@@ -134,26 +135,33 @@ class Line():
         fits_empty = self.last_n_fits.is_empty()  # Is the queue of coefs empty?
         radius_empty = self.last_n_fits.is_empty()  # Is the queue of radiuses empty?
 
-        if (fits_empty | radius_empty):
-            return True  # If either queue is empty, we accept these coefficients 
-            #even thought we weren't able to make sure they made sense
+        if (fits_empty | radius_empty) | \
+        (self.frames_since_detection >= self.last_n):
+            return True  # If either queue is empty or we haven't been able to 
+            # validate a fit since more than last_n frames, we accept these 
+            # coefficients even thought we weren't able to make sure they made
+            # sense
         
         else:  # If there are elements in the queue, sanity-check them:
             last_n_fits_mean = self.last_n_fits.mean()
             last_n_rad_mean = self.last_n_radius.mean()
             # We want coefficients to be within pos_tol of the average coeffs:
-            # order_2_ok = np.absolute(
-            #     (self.current_fit[0] - last_n_mean[0]) / \
-            #     last_n_mean[0]) <= self pos_tol
+            order_2_ok = np.absolute(
+                (self.current_fit[0] - last_n_fits_mean[0]) / \
+                last_n_fits_mean[0]) <= 2 * self.pos_tol
             # order_1_ok = np.absolute((self.current_fit[1] - last_n_mean[1]) / \
             #     last_n_mean[1]) <= self pos_tol
             position_ok = np.absolute((self.current_fit[2] - \
                 last_n_fits_mean[2]) / last_n_fits_mean[2]) <= self.pos_tol
             radius_ok = np.absolute((self.current_curvature - \
                 last_n_rad_mean) / last_n_rad_mean) <= self.rad_tol
+            # print(self.current_curvature, 
+            #     last_n_rad_mean,
+            #     np.absolute((self.current_curvature - \
+            #     last_n_rad_mean) / last_n_rad_mean))
 
         #return (order_2_ok & order_1_ok & order_0_ok)
-        return (position_ok & radius_ok)
+        return (order_2_ok & position_ok & radius_ok)
 
 
     def fit_poly(self, y):
@@ -181,16 +189,17 @@ class Line():
 
             if self.sanity_check():  # If coefficients seem sensible:
                 self.update_line(self.current_fit, self.current_curvature)
-                valid = True
                 self.frames_since_detection = 0
             else:
                 # self.update_line(self.last_n_fits.items[0], 
                 #     self.last_n_radius.items[0])
-                self.frames_since_detection += 1
+                self.frames_since_detection = np.max((1, 
+                    self.frames_since_detection + 1))
+                self.detected = False
                 print("Frames since last good detection:", 
                     self.frames_since_detection)
 
-        return valid, self.current_fit
+        return self.detected, self.current_fit
 
 
     def predict_poly(self, y):
@@ -206,7 +215,7 @@ class Line():
 
         return self.last_x_fitted
 
-    def predict_avg_poly(self, y):
+    def predict_avg_poly(self, y, img_size):
         '''
         Calculates the outcome values associated to each y for the mean of the 
         n latest polynomial coefficients. 
@@ -218,6 +227,8 @@ class Line():
 
         fit = [self.last_n_fits.mean()[0], self.last_n_fits.mean()[1], 
             self.last_n_fits.mean()[2]]
-        self.last_x_fitted = fit[0] * y**2 + fit[1] * y + fit[2]
+        self.last_x_fitted = np.maximum(0, 
+            np.minimum(fit[0] * y**2 + fit[1] * y + fit[2], 
+            img_size[0] - 1))
 
         return self.last_x_fitted

@@ -241,10 +241,12 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
         inverse = False, lines = False, source_coords = source_vertices, 
         dest_coords = dest_vertices)
 
-    # Equalize histogram: convert to HUV then to back RGB
-    warped_yuv = cv2.cvtColor(warped, cv2.COLOR_RGB2YCrCb)
-    warped_yuv[:, :, 0] = cv2.equalizeHist(warped_yuv[:, :, 0])
-    warped_hls = cv2.cvtColor(warped_yuv, cv2.COLOR_RGB2HLS)
+    # # Equalize histogram: convert to HUV then to back RGB
+    # warped_yuv = cv2.cvtColor(warped, cv2.COLOR_RGB2YCrCb)
+    # warped_yuv[:, :, 0] = cv2.equalizeHist(warped_yuv[:, :, 0])
+    # warped_hls = cv2.cvtColor(warped_yuv, cv2.COLOR_RGB2HLS)
+
+    warped_hls = cv2.cvtColor(warped, cv2.COLOR_RGB2HLS)
 
     warped_s = warped_hls[:,:,2]  # Isolate S channel for gradient calculations
 
@@ -277,9 +279,7 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
 
 #*******************************************************************************
 
-
-
-def window_search(binary_map, file_index = None):
+def window_search(binary_map):
     '''
     binary_map is a warped binary map, one channel only.
     '''
@@ -304,10 +304,7 @@ def window_search(binary_map, file_index = None):
     # Current positions to be updated for each window
     leftx_current = leftx_base
     rightx_current = rightx_base
-    # Set the width of the windows +/- margin
-    margin = 100
-    # Set minimum number of pixels found to recenter window
-    minpix = 20
+
     # Create empty lists to receive left and right lane pixel indices
     left_lane_inds = []
     right_lane_inds = []
@@ -352,10 +349,7 @@ def window_search(binary_map, file_index = None):
     right_lane_inds = np.concatenate(right_lane_inds)
 
     # Extract left and right line pixel positions
-    # leftx = nonzerox[left_lane_inds]   ## Modify with call to Line()
-    # lefty = nonzeroy[left_lane_inds] 
-    # rightx = nonzerox[right_lane_inds]
-    # righty = nonzeroy[right_lane_inds] 
+
     line_left.all_x = nonzerox[left_lane_inds]
     line_left.all_y = nonzeroy[left_lane_inds]
     line_right.all_x = nonzerox[right_lane_inds]
@@ -369,15 +363,8 @@ def window_search(binary_map, file_index = None):
     _, _ = line_left.fit_poly(ploty)
     _, _ = line_right.fit_poly(ploty)
 
-    left_fitx = line_left.predict_avg_poly(ploty)
-    right_fitx = line_right.predict_avg_poly(ploty)
-
-    # left_fit = np.polyfit(lefty, leftx, 2)  # Modify with call to Line()
-    # right_fit = np.polyfit(righty, rightx, 2)
-
-    # left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    # right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-
+    left_fitx = line_left.predict_avg_poly(ploty, img_size)
+    right_fitx = line_right.predict_avg_poly(ploty, img_size)
 
     out_img[line_left.all_y, line_left.all_x] = [255, 0, 0]
     out_img[line_right.all_y, line_right.all_x] = [0, 255, 0]
@@ -391,14 +378,24 @@ def window_search(binary_map, file_index = None):
     return out_img
 
 
-def search_around_line(binary_map, left_fit, right_fit, display = True,
-    file_index = None):
+def search_around_line(binary_map):
 
-    # It's now much easier to find line pixels!
+    # Get image size:
+    img_size = (binary_map.shape[1], binary_map.shape[0])
+
+    # Create an output image to draw on and visualize the result:
+    out_img = np.dstack((binary_map, binary_map, binary_map)) * 255
+
+    # Get non zero pixels from warped binary map:
     nonzero = binary_map.nonzero()
     nonzeroy = np.array(nonzero[0])
     nonzerox = np.array(nonzero[1])
-    margin = 100
+
+    # Get latest good fit:
+    left_fit = line_left.last_n_fits.items[0]
+    right_fit = line_right.last_n_fits.items[0]
+
+    # Identify non-zero pixels that are within the search corridors:
     left_lane_inds = ((nonzerox > (left_fit[0] * (nonzeroy**2) + \
         left_fit[1] * nonzeroy + left_fit[2] - margin)) & \
         (nonzerox < (left_fit[0] * (nonzeroy**2) + left_fit[1] * nonzeroy + \
@@ -408,27 +405,40 @@ def search_around_line(binary_map, left_fit, right_fit, display = True,
         (nonzerox < (right_fit[0] * (nonzeroy**2) + right_fit[1] * nonzeroy + \
         right_fit[2] + margin)))  
 
-    # Again, extract left and right line pixel positions
-    leftx = nonzerox[left_lane_inds]
-    lefty = nonzeroy[left_lane_inds] 
-    rightx = nonzerox[right_lane_inds]
-    righty = nonzeroy[right_lane_inds]
-    # Fit a second order polynomial to each
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
-    # Generate x and y values for plotting
-    ploty = np.linspace(0, binary_map.shape[0] - 1, binary_map.shape[0])
-    left_fitx = left_fit[0] * ploty**2 + left_fit[1] * ploty + left_fit[2]
-    right_fitx = right_fit[0] * ploty**2 + right_fit[1] * ploty + right_fit[2]
+    # Extract left and right line pixel positions
+    line_left.all_x = nonzerox[left_lane_inds]
+    line_left.all_y = nonzeroy[left_lane_inds] 
+    line_right.all_x = nonzerox[right_lane_inds]
+    line_right.all_y = nonzeroy[right_lane_inds]
 
-    # Visualize:
+    # Fit a second order polynomial to each
+    # Generate x and y values for plotting
+    ploty = np.linspace(0, img_size[1] - 1, img_size[0])
+
+    _, _ = line_left.fit_poly(ploty)
+    _, _ = line_right.fit_poly(ploty)
+ 
+    left_fitx = line_left.predict_avg_poly(ploty, img_size)
+    right_fitx = line_right.predict_avg_poly(ploty, img_size)
+
+    # Color the left line in red, the right line in green:
+    out_img[line_left.all_y, line_left.all_x] = [255, 0, 0]
+    out_img[line_right.all_y, line_right.all_x] = [0, 255, 0]
+
+    # Display the lines on the image:
+    lanes_img = np.zeros_like(out_img)
+    lanes_img[np.int32(ploty), np.int32(left_fitx)] = [255, 255, 0]
+    lanes_img[np.int32(ploty), np.int32(right_fitx)] = [255, 255, 0]
+    out_img = cv2.addWeighted(out_img, 1, lanes_img, 1, 0.0)
+
 
     # Create an image to draw on and an image to show the selection window
     out_img = np.dstack((binary_map, binary_map, binary_map)) * 255
     window_img = np.zeros_like(out_img)
+
     # Color in left and right line pixels
-    out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-    out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 255, 0]
+    out_img[line_left.all_y, line_left.all_x] = [255, 0, 0]
+    out_img[line_right.all_y, line_right.all_x] = [0, 255, 0]
 
     # Generate a polygon to illustrate the search window area
     # And recast the x and y points into usable format for cv2.fillPoly()
@@ -446,28 +456,15 @@ def search_around_line(binary_map, left_fit, right_fit, display = True,
     # Draw the lane onto the warped blank image
     cv2.fillPoly(window_img, np.int_([left_line_pts]), (0,255, 0))
     cv2.fillPoly(window_img, np.int_([right_line_pts]), (0,255, 0))
-    result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
-    plt.imshow(result)
-    plt.plot(left_fitx, ploty, color='yellow')
-    plt.plot(right_fitx, ploty, color='yellow')
-    plt.xlim(0, 1280)
-    plt.ylim(720, 0)    
+    out_img = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+    # plt.imshow(result)
+    # plt.plot(left_fitx, ploty, color='yellow')
+    # plt.plot(right_fitx, ploty, color='yellow')
+    # plt.xlim(0, 1280)
+    # plt.ylim(720, 0)    
 
-    # Save the resulting plot as a Numpy array for further use:
-    fig = plt.figure(figsize = (1280 / 96, 720 / 96), dpi = 96)
-    canvas = FigureCanvasAgg(fig)
-    ax = fig.gca()
-    w, h = np.int32(fig.get_size_inches() * fig.get_dpi())
-    plt.imshow(out_img)
-    plt.plot(left_fitx, ploty, color='yellow', linewidth = 5)
-    plt.plot(right_fitx, ploty, color='yellow', linewidth = 5)
-    fig.tight_layout()
-    plt.axis('off')
-    plt.xlim(0, 1280)
-    plt.ylim(720, 0)
-    canvas.draw()
 
-    return left_fit, right_fit, image_out
+    return out_img
 
 
 
@@ -597,8 +594,8 @@ def compose_image(images, sub_size_ratio = 0.3):
 
         top_left_x = id_col * sub_size[0]  # id_col * (512)
         top_left_y = id_row * sub_size[1]  # id_col * (288)
-                
-        img_mini = scale_map(cv2.resize(img, (0, 0), fx = sub_size_ratio, 
+        
+        img_mini = scale_map(cv2.resize(img, None, fx = sub_size_ratio, 
             fy = sub_size_ratio), max_value = 255, dtype = 'uint8')
 
         if (len(img_mini.shape) == 2):
@@ -614,8 +611,18 @@ def compose_image(images, sub_size_ratio = 0.3):
 
 def lambda_wrapper(img, M_cam, dist_coef, M_warp, dest_vertices, 
     file_index = None, sub_size_ratio = .4):
+
+
     bin_map = global_binary_map(img, M_cam, dist_coef, M_warp, dest_vertices)[0]
-    img_lines = window_search(bin_map, file_index = None)
+
+    if (len(line_left.last_n_fits.items) > 0) & \
+        (len(line_right.last_n_fits.items) > 0) & \
+        (line_left.frames_since_detection <= n_search) & \
+        (line_right.frames_since_detection <= n_search):
+        img_lines = search_around_line(bin_map)
+    else:
+        img_lines = window_search(bin_map)
+
     composed = compose_image([img, img_lines], sub_size_ratio = .4)
     return composed
 
@@ -638,16 +645,16 @@ if __name__ == '__main__':
                                   [1280, 670]])
 
     #For video 2:
-    # source_vertices = np.float32([[0, 720],
-    #                               [559, 482],
-    #                               [721, 482], 
-    #                               [1280, 720]])
+    source_vertices = np.float32([[0, 670],
+                                  [559, 482],
+                                  [721, 482], 
+                                  [1280, 670]])
 
     # Without histogram equalization:
     thresh_x = (30, 100)
-    thresh_h = (18, 35)
+    thresh_h = (18, 23)
     thresh_l = (100, 255)
-    thresh_s = (90, 255)
+    thresh_s = (140, 255)
 
     # With histogram equalization:
     # thresh_x = (50, 100)
@@ -655,9 +662,21 @@ if __name__ == '__main__':
     # thresh_l = (250, 255)
     # thresh_s = (120, 255)  
 
+    # Width of the windows +/- margin
+    margin = 80
+    # Minimum number of pixels found to recenter window
+    minpix = 30
+
+    # Number of frames to average fitted lines over:
+    n_fits = 7
+
+    # Number of frames to try searching around line before reverting to window
+    # search:
+    n_search = 5
+
     # Global Line class variables:
-    line_left = Line([0, 255, 0], 5, pos_tol = .8, rad_tol = 0.5)
-    line_right = Line([255, 0, 0], 5, pos_tol = .8, rad_tol = 0.5)
+    line_left = Line([0, 255, 0], n_fits, n_search, pos_tol = .8, rad_tol = 0.7)
+    line_right = Line([255, 0, 0], n_fits, n_search, pos_tol = .8, rad_tol = 0.7)
 
 
 
@@ -667,23 +686,23 @@ if __name__ == '__main__':
 
     # Load movie file to work on:
 
-    # clip_in = VideoFileClip('short_video.mp4')
-    # clip_out = clip_in.fl_image(lambda x: lambda_wrapper(x, M_cam, dist_coef,
-    #     M_warp, dest_vertices, file_index = None, sub_size_ratio = .4))
-    # clip_out.write_videofile('short_video_test.mp4', audio = False)
+    clip_in = VideoFileClip('challenge_video.mp4')
+    clip_out = clip_in.fl_image(lambda x: lambda_wrapper(x, M_cam, dist_coef,
+        M_warp, dest_vertices, file_index = None, sub_size_ratio = .4))
+    clip_out.write_videofile('challenge_video_test.mp4', audio = False)
 
-    file_index = 0
+    # file_index = 0
     
-    path_names = glob.glob('./short_test_images/*.jpg')
-    for path in path_names:
-        # Isolate file name without extension:
-        file_name = path.split('/')[-1].split('.')[0]
-        print("Processing ", file_name)
-        img = mpimg.imread(path)
+    # path_names = glob.glob('./short_test_images/*.jpg')
+    # for path in path_names:
+    #     # Isolate file name without extension:
+    #     file_name = path.split('/')[-1].split('.')[0]
+    #     print("Processing ", file_name)
+    #     img = mpimg.imread(path)
 
-        combined_map, img_undist, warped_hls, warped_s, \
-            x_binary, yellows, lightness, saturation = global_binary_map(img, 
-                                        M_cam, dist_coef, M_warp, dest_vertices)
+    #     combined_map, img_undist, warped_hls, warped_s, \
+    #         x_binary, yellows, lightness, saturation = global_binary_map(img, 
+    #                                     M_cam, dist_coef, M_warp, dest_vertices)
 
         # binary_map, _, _, _, _, _, _, _, _ = global_binary_map(img, M_cam, 
         # dist_coef, M_warp, dest_vertices)
@@ -693,8 +712,8 @@ if __name__ == '__main__':
         # composed = np.copy(img)
         # composed[:216, :384, :] = np.dstack((binary_map_mini, binary_map_mini, binary_map_mini))
 
-        img_lines = window_search(combined_map, 
-            file_index = None)
+        # img_lines = window_search(combined_map, 
+        #     file_index = None)
         # convolutional_search(binary_map, file_index = file_index)
         # composed = compose_image([img, img_lines], sub_size_ratio = .4)
         # f = plt.figure(figsize = (12.80,7.20), dpi = 100)
@@ -705,33 +724,31 @@ if __name__ == '__main__':
         # display_images([composed], n_cols = 1, 
         #     write_path = './test_images/' + file_name + '_composed.png')
 
-        display_images([img, 
-                        warped_hls,
-                        cv2.cvtColor(warped_hls, cv2.COLOR_RGB2HLS)[:,:,1],
-                        warped_hls[:,:,1],
-                        warped_s,
-                        x_binary, 
-                        yellows,
-                        lightness,
-                        saturation,
-                        combined_map,
-                        img_lines
-                        ], 
-                        titles = [
-                        "img", 
-                        "warped_hls",
-                        "warped l before equalization",
-                        "warped l after equalization",
-                        "warped_s",
-                        "x_binary", 
-                        "yellows",
-                        "lightness",
-                        "saturation",
-                        "combined_map",
-                        "img_lines"
-                        ],
+        # display_images([img, 
+        #                 warped_hls,
+        #                 warped_hls[:,:,1],
+        #                 warped_s,
+        #                 x_binary, 
+        #                 yellows,
+        #                 lightness,
+        #                 saturation,
+        #                 combined_map,
+        #                 img_lines
+        #                 ], 
+        #                 titles = [
+        #                 "img", 
+        #                 "warped_hls",
+        #                  "warped l",
+        #                 "warped_s",
+        #                 "x_binary", 
+        #                 "yellows",
+        #                 "lightness",
+        #                 "saturation",
+        #                 "combined_map",
+        #                 "img_lines"
+        #                 ],
                         
-            n_cols = 4 
-            , write_path = './short_test_images/' + file_name + '_results.png'
-            )
+        #     n_cols = 4 
+        #     , write_path = './short_test_images/' + file_name + '_results.png'
+        #     )
 
