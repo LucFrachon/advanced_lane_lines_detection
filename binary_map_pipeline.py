@@ -64,8 +64,8 @@ def get_warp_matrix(img_size, source_coords):
     return M_warp, dest_coords
 
 
-def warp_image(image, warp_matrix, inverse = False, lines = False, 
-        source_coords = None, dest_coords = None):
+def warp_image(image, warp_matrix, source_coords = None, dest_coords = None,
+    inverse = False, lines = False):
     '''
     Given an original image, applies a warp transformation using 'warp_matrix'
     and returns both the original and the warped images.
@@ -75,23 +75,22 @@ def warp_image(image, warp_matrix, inverse = False, lines = False,
     provided as np.arrays.
 
     '''
-    # Get image size:
-    img_size = (image.shape[1], image.shape[0])
     # Apply inverse flag depending on direction of transformation:
     if inverse:  
-        flags = (cv2.INTER_LINEAR, cv2.WARP_INVERSE_MAP)
+        flags = cv2.WARP_INVERSE_MAP
     else:
         flags = cv2.INTER_LINEAR
 
+    img_size = (image.shape[1], image.shape[0])
+
     # Perform image warping:
-    warped = cv2.warpPerspective(image, M_warp, img_size, 
-        flags = flags)  
+    warped = cv2.warpPerspective(image, M_warp, img_size, flags = flags)  
 
     if lines:  # Do we want to draw polygons on the images?
         if (source_coords is None) or (dest_coords is None):
             print("Warning: If you want lines to be drawn, you must provide  \
                 'source_coords' and 'dest_coords'. No lines drawn this time.")
-        col = (255, 0, 0)
+        col = (0, 0, 255)
         src = np.int32(source_coords)
         dst = np.int32(dest_coords)
         image = cv2.polylines(image, [src], isClosed = 1, color = col,
@@ -238,8 +237,8 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
 
     # Warp image to bird's eye view:
     img_undist, warped = warp_image(img_undist, M_warp, 
-        inverse = False, lines = False, source_coords = source_vertices, 
-        dest_coords = dest_vertices)
+        inverse = False, lines = False,
+        source_coords = source_vertices, dest_coords = dest_vertices)
 
     # # Equalize histogram: convert to HUV then to back RGB
     # warped_yuv = cv2.cvtColor(warped, cv2.COLOR_RGB2YCrCb)
@@ -363,19 +362,36 @@ def window_search(binary_map):
     _, _ = line_left.fit_poly(ploty)
     _, _ = line_right.fit_poly(ploty)
 
-    left_fitx = line_left.predict_avg_poly(ploty, img_size)
-    right_fitx = line_right.predict_avg_poly(ploty, img_size)
+    left_fitx = line_left.predict_avg_poly(ploty)
+    right_fitx = line_right.predict_avg_poly(ploty)
 
     out_img[line_left.all_y, line_left.all_x] = [255, 0, 0]
     out_img[line_right.all_y, line_right.all_x] = [0, 255, 0]
 
-    # Display the lines on the image:
-    lanes_img = np.zeros_like(out_img)
-    lanes_img[np.int32(ploty), np.int32(left_fitx)] = [255, 255, 0]
-    lanes_img[np.int32(ploty), np.int32(right_fitx)] = [255, 255, 0]
-    out_img = cv2.addWeighted(out_img, 1, lanes_img, 1, 0.0)
+    # Generate a polygon to show the detected lane
+    # And recast the x and y points into usable format for cv2.fillPoly()
+    left_lane_border = np.array([np.transpose(np.vstack([left_fitx, 
+        ploty]))])
+    right_lane_border = np.array([np.flipud(np.transpose(np.vstack([right_fitx, 
+        ploty])))])
+    lane_pts = np.hstack((left_lane_border, right_lane_border))
 
-    return out_img
+    # Draw the lane onto a warped blank image
+    lane_img = np.zeros_like(out_img)
+    cv2.fillPoly(lane_img, np.int_([lane_pts]), (0, 0 , 255))
+    out_img = cv2.addWeighted(out_img, 1, lane_img, 0.3, 0)
+
+    # Calculate the average position in lane:
+    lane_width = np.absolute(line_right.base_line_position() - \
+        line_left.base_line_position())
+    position = pix_to_m * ((img_size[0] - lane_width )/ 2. - \
+        line_left.base_line_position())
+
+    # Calculate the average radius of curvature:
+    radius = np.asscalar((line_left.last_n_radius.items[0] + \
+        line_left.last_n_radius.items[0]) / 2)
+
+    return out_img, lane_img, position, radius
 
 
 def search_around_line(binary_map):
@@ -418,8 +434,8 @@ def search_around_line(binary_map):
     _, _ = line_left.fit_poly(ploty)
     _, _ = line_right.fit_poly(ploty)
  
-    left_fitx = line_left.predict_avg_poly(ploty, img_size)
-    right_fitx = line_right.predict_avg_poly(ploty, img_size)
+    left_fitx = line_left.predict_avg_poly(ploty)
+    right_fitx = line_right.predict_avg_poly(ploty)
 
     # Color the left line in red, the right line in green:
     out_img[line_left.all_y, line_left.all_x] = [255, 0, 0]
@@ -449,7 +465,7 @@ def search_around_line(binary_map):
     left_line_pts = np.hstack((left_line_window1, left_line_window2))
     right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, 
         ploty]))])
-    right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + \
+    right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx +\
         margin, ploty])))])
     right_line_pts = np.hstack((right_line_window1, right_line_window2))
 
@@ -457,14 +473,32 @@ def search_around_line(binary_map):
     cv2.fillPoly(window_img, np.int_([left_line_pts]), (0,255, 0))
     cv2.fillPoly(window_img, np.int_([right_line_pts]), (0,255, 0))
     out_img = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
-    # plt.imshow(result)
-    # plt.plot(left_fitx, ploty, color='yellow')
-    # plt.plot(right_fitx, ploty, color='yellow')
-    # plt.xlim(0, 1280)
-    # plt.ylim(720, 0)    
 
+    # Generate a polygon to show the detected lane
+    # And recast the x and y points into usable format for cv2.fillPoly()
+    left_lane_border = np.array([np.transpose(np.vstack([left_fitx, 
+        ploty]))])
+    right_lane_border = np.array([np.flipud(np.transpose(np.vstack([right_fitx, 
+        ploty])))])
+    lane_pts = np.hstack((left_lane_border, right_lane_border))
 
-    return out_img
+    # Draw the lane onto a warped blank image
+    temp_img = np.dstack((binary_map, binary_map, binary_map)) * 255
+    lane_img = np.zeros_like(temp_img)
+    cv2.fillPoly(lane_img, np.int_([lane_pts]), (0, 0 , 255))
+    out_img = cv2.addWeighted(out_img, 1, lane_img, 0.3, 0)
+
+    # Calculate the average position in lane:
+    lane_width = np.absolute(line_right.base_line_position() - \
+        line_left.base_line_position())
+    position = pix_to_m * ((img_size[0] - lane_width )/ 2. - \
+        line_left.base_line_position())
+
+    # Calculate the average radius of curvature:
+    radius = np.asscalar((line_left.last_n_radius.items[0] + \
+        line_left.last_n_radius.items[0]) / 2)
+
+    return out_img, lane_img, position, radius
 
 
 
@@ -619,11 +653,27 @@ def lambda_wrapper(img, M_cam, dist_coef, M_warp, dest_vertices,
         (len(line_right.last_n_fits.items) > 0) & \
         (line_left.frames_since_detection <= n_search) & \
         (line_right.frames_since_detection <= n_search):
-        img_lines = search_around_line(bin_map)
+        img_lines, lane_img, position, radius = search_around_line(bin_map)
     else:
-        img_lines = window_search(bin_map)
+        img_lines, lane_img, position, radius = window_search(bin_map)
 
-    composed = compose_image([img, img_lines], sub_size_ratio = .4)
+    lane_img, lane_unwarped = warp_image(lane_img, M_warp, 
+        source_coords = source_vertices, dest_coords = dest_vertices, 
+        inverse = True, lines = True)
+
+    # Overlay the unwarped detected lane over the original image:
+    out_img = cv2.addWeighted(img, 1, lane_unwarped, 0.3, 0)
+
+    composed = compose_image([out_img, img_lines], sub_size_ratio = .4)
+    
+    # Add text to indicate position in lane and curvature radius:
+    cv2.putText(composed, "Position: {:.3f}m".format(position), 
+        fontFace = cv2.FONT_HERSHEY_COMPLEX_SMALL, fontScale = 1.,
+        color = (255, 255, 255), thickness = 2, org = (450, 650))
+    cv2.putText(composed, "Curve radius: {:.2f}m".format(radius), 
+        fontFace = cv2.FONT_HERSHEY_COMPLEX_SMALL, fontScale = 1.,
+        color = (255, 255, 255), thickness = 2, org = (450, 700))
+
     return composed
 
 # ============================== MAIN PROGRAM ====================================
@@ -638,6 +688,9 @@ if __name__ == '__main__':
     # Define global variables:
     img_size = (1280, 720)
 
+    # Conversion ratio from pixels to meters on the road (width):
+    pix_to_m = 5.7 / img_size[0]
+
     # For video 1:
     source_vertices = np.float32([[0, 670],
                                   [538, 460],
@@ -645,22 +698,17 @@ if __name__ == '__main__':
                                   [1280, 670]])
 
     #For video 2:
-    source_vertices = np.float32([[0, 670],
-                                  [559, 482],
-                                  [721, 482], 
-                                  [1280, 670]])
+    # source_vertices = np.float32([[0, 670],
+    #                               [559, 482],
+    #                               [721, 482], 
+    #                               [1280, 670]])
 
-    # Without histogram equalization:
+    # Binary map thresholds:
     thresh_x = (30, 100)
     thresh_h = (18, 23)
     thresh_l = (100, 255)
     thresh_s = (140, 255)
 
-    # With histogram equalization:
-    # thresh_x = (50, 100)
-    # thresh_h = (18, 23)  # Base = 180
-    # thresh_l = (250, 255)
-    # thresh_s = (120, 255)  
 
     # Width of the windows +/- margin
     margin = 80
@@ -675,8 +723,10 @@ if __name__ == '__main__':
     n_search = 5
 
     # Global Line class variables:
-    line_left = Line([0, 255, 0], n_fits, n_search, pos_tol = .8, rad_tol = 0.7)
-    line_right = Line([255, 0, 0], n_fits, n_search, pos_tol = .8, rad_tol = 0.7)
+    line_left = Line([0, 255, 0], img_size,
+        n_fits, n_search, pos_tol = .3, rad_tol = 0.5)
+    line_right = Line([255, 0, 0], img_size, 
+        n_fits, n_search, pos_tol = .3, rad_tol = 0.5)
 
 
 
@@ -686,10 +736,10 @@ if __name__ == '__main__':
 
     # Load movie file to work on:
 
-    clip_in = VideoFileClip('challenge_video.mp4')
+    clip_in = VideoFileClip('project_video.mp4')
     clip_out = clip_in.fl_image(lambda x: lambda_wrapper(x, M_cam, dist_coef,
         M_warp, dest_vertices, file_index = None, sub_size_ratio = .4))
-    clip_out.write_videofile('challenge_video_test.mp4', audio = False)
+    clip_out.write_videofile('project_video_test.mp4', audio = False)
 
     # file_index = 0
     

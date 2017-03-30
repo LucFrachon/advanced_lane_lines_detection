@@ -38,7 +38,7 @@ class Queue():
 
 
 class Line():
-    def __init__(self, color, last_n = 5, search_n = 10, 
+    def __init__(self, color, img_size, last_n = 5, search_n = 10, 
         pos_tol = 0.2, rad_tol = 0.2):
         '''
         color:      color in which to display the line
@@ -50,6 +50,9 @@ class Line():
         rad_tol:    tolerance on the curvature radius of a fit to be considered
                     valid (as a proportions of the mean of the last n good fits)
         '''
+        # Image size:
+        self.img_size = img_size
+
         # Number of sets of fit coefficients to remember:
         self.last_n = last_n
 
@@ -85,7 +88,7 @@ class Line():
         self.current_curvature = None
 
         #distance in meters of vehicle center from the line
-        self.line_base_pos = None
+        self.line_base_pos = self.img_size[0] / 2.
 
         #difference in fit coefficients between last and new fits
         #self.diffs = np.array([0,0,0], dtype='float')
@@ -103,8 +106,8 @@ class Line():
     def compute_curvature(self, fit, y):
 
         y_eval = np.max(y)
-        radius = ((1 + (2 * fit[0] * y_eval + \
-            fit[1]) ** 2) ** 1.5) / np.absolute(2 * fit[0] + 0.0001)
+        radius = np.asscalar(((1 + (2 * fit[0] * y_eval + \
+            fit[1]) ** 2) ** 1.5) / np.absolute(2 * fit[0] + 0.0001))
         return radius
 
 
@@ -117,7 +120,7 @@ class Line():
         self.detected = True
         self.last_n_fits.enqueue(fit)
         self.last_n_radius.enqueue(np.array(curve_rad)[np.newaxis])
-
+        self.line_base_pos = self.base_line_position()
         # Don't let the queue exceed the maximum length:
         if len(self.last_n_fits.items) > self.last_n:
             self.last_n_fits.dequeue()
@@ -133,7 +136,7 @@ class Line():
         '''
         
         fits_empty = self.last_n_fits.is_empty()  # Is the queue of coefs empty?
-        radius_empty = self.last_n_fits.is_empty()  # Is the queue of radiuses empty?
+        radius_empty = self.last_n_radius.is_empty()  # Is the queue of radiuses empty?
 
         if (fits_empty | radius_empty) | \
         (self.frames_since_detection >= self.last_n):
@@ -145,23 +148,20 @@ class Line():
         else:  # If there are elements in the queue, sanity-check them:
             last_n_fits_mean = self.last_n_fits.mean()
             last_n_rad_mean = self.last_n_radius.mean()
-            # We want coefficients to be within pos_tol of the average coeffs:
-            order_2_ok = np.absolute(
-                (self.current_fit[0] - last_n_fits_mean[0]) / \
-                last_n_fits_mean[0]) <= 2 * self.pos_tol
-            # order_1_ok = np.absolute((self.current_fit[1] - last_n_mean[1]) / \
-            #     last_n_mean[1]) <= self pos_tol
-            position_ok = np.absolute((self.current_fit[2] - \
-                last_n_fits_mean[2]) / last_n_fits_mean[2]) <= self.pos_tol
+            # We want the base line position to be within tolerance of the latest
+            # n average:
+            max_y = self.img_size[1] - 1
+            current_pos = self.current_fit[0] * max_y ** 2 + \
+                self.current_fit[1] * max_y + self.current_fit[2]
+            avg_pos = last_n_fits_mean[0] * max_y ** 2 + \
+                last_n_fits_mean[1] * max_y + last_n_fits_mean[2]
+
+            position_ok = np.absolute((current_pos - avg_pos) / avg_pos) \
+                <= self.pos_tol
             radius_ok = np.absolute((self.current_curvature - \
                 last_n_rad_mean) / last_n_rad_mean) <= self.rad_tol
-            # print(self.current_curvature, 
-            #     last_n_rad_mean,
-            #     np.absolute((self.current_curvature - \
-            #     last_n_rad_mean) / last_n_rad_mean))
-
-        #return (order_2_ok & order_1_ok & order_0_ok)
-        return (order_2_ok & position_ok & radius_ok)
+        
+        return (position_ok & radius_ok)
 
 
     def fit_poly(self, y):
@@ -174,18 +174,12 @@ class Line():
         - self.current_fit: The fitted coefficients
         '''
         
-        # Initialize variables:
-        valid = False
-        self.current_fit = None
-        self.current_curvature = None
-
         # First make sure we actually have points to fit:
         xy_ok = (self.all_x.shape != (0,)) & (self.all_y.shape != (0,))
 
         if xy_ok: # If so, fit polynomial and get coefficients
             self.current_fit = np.polyfit(self.all_y, self.all_x, 2)
             self.current_curvature = self.compute_curvature(self.current_fit, y)
-
 
             if self.sanity_check():  # If coefficients seem sensible:
                 self.update_line(self.current_fit, self.current_curvature)
@@ -215,7 +209,8 @@ class Line():
 
         return self.last_x_fitted
 
-    def predict_avg_poly(self, y, img_size):
+
+    def predict_avg_poly(self, y):
         '''
         Calculates the outcome values associated to each y for the mean of the 
         n latest polynomial coefficients. 
@@ -229,6 +224,19 @@ class Line():
             self.last_n_fits.mean()[2]]
         self.last_x_fitted = np.maximum(0, 
             np.minimum(fit[0] * y**2 + fit[1] * y + fit[2], 
-            img_size[0] - 1))
+            self.img_size[0] - 1))
 
         return self.last_x_fitted
+
+    def base_line_position(self):
+        '''
+        Computes the position of the line at the bottom of the image, in relation 
+        to the left border, based on the latest valid line fit.
+        '''
+
+        fit = self.last_n_fits.items[0]
+
+        position = fit[0] * (self.img_size[1] - 1)**2 + \
+            fit[1] * (self.img_size[1] - 1) + fit[2]
+
+        return position
