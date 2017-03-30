@@ -13,30 +13,7 @@ from camera_calibration import *
 from moviepy.editor import VideoFileClip
 from Line_class import Line
 
-def isolate_roi(image, vertices):
-    '''
-    Applies an image mask to isolate a region of interest, define as a polygon.
-    Only keeps the region of the image defined by the polygon formed from 
-    `vertices`. The rest of the image is set to black.
-    '''
-    # Define a blank mask to start with
-    mask = np.zeros_like(image)   
-    
-    # Define a 3 channel or 1 channel color to fill the mask with depending on 
-    #the input image
-    if len(image.shape) > 2:
-        channel_count = image.shape[2] 
-        ignore_mask_color = (255,) * channel_count
-    else:
-        ignore_mask_color = 255
-        
-    # Fill pixels inside the polygon defined by "vertices" with the fill color    
-    cv2.fillPoly(mask, vertices, ignore_mask_color)
-    
-    # Return the image only where mask pixels are nonzero
-    masked_image = cv2.bitwise_and(image, mask)
-    return masked_image
-
+# ************************* Image warping and scaling ****************************
 
 def get_warp_matrix(img_size, source_coords):
     '''
@@ -109,6 +86,8 @@ def scale_map(binary_map, max_value = 255, dtype = 'uint8'):
     return (float(max_value) * binary_map / np.max(binary_map)).astype(dtype)
 
 
+# ******************************** Binary maps ***********************************
+
 def make_grad_map(image, orient = 'x', sobel_kernel = 3, thresh = (0, 255)):
     '''
     Takes a single-channel image and applies a Sobel filter on it in either the x
@@ -147,7 +126,7 @@ def make_grad_mag_map(sobel_x, sobel_y, thresh = (0, 255)):
     '''
     Takes the output of cv2.Sobel() in the x and y directions (or their absolute 
     values) and computes the gradient magnitude, then applies a threshold to 
-    create a binary binary_map.
+    return a binary map.
     '''
     # Calculate the L2-norm and scale it to 8-bit
     sobel_mag = scale_map(np.sqrt(sobel_x ** 2 + sobel_y ** 2))
@@ -177,8 +156,8 @@ def make_grad_dir_map(sobel_x, sobel_y, thresh = (0, 90)):
 
 def make_channel_map(image, thresh = (0, 255), scale_to = 255, channel = 1):
     ''' 
-    Takes a 3-channel image and a channel and makes a binary binary_map for that channel,
-    only retaining pixels that are within thresh.
+    Takes a 3-channel image and a channel and makes a binary map for that 
+    channel, only retaining pixels that are within thresh.
     '''
     # Isolate the specified channel and scale it:
     channel_img = scale_map(image[:,:, channel], max_value = scale_to)
@@ -189,14 +168,14 @@ def make_channel_map(image, thresh = (0, 255), scale_to = 255, channel = 1):
     return binary
 
 
-
 def combine_maps(maps):
     '''
     Takes a dict of binary maps in the form:
-    {'grad_x': <binary_map>, 'grad_y': <binary_map>, 'grad_mag': <binary_map>, 'grad_dir': <binary_map>, 
-    'hue': <binary_map>, 'light': <binary_map>, 'sat': <binary_map>}
+    {'grad_x': <binary_map>, 'grad_y': <binary_map>, 'grad_mag': <binary_map>, 
+    'grad_dir': <binary_map>, 'hue': <binary_map>, 'light': <binary_map>, 
+    'sat': <binary_map>}
     and combines them into a single one. All maps should have the same size.
-    Returns a binary binary_map.
+    Returns the combined binary map.
     '''
     # Prepare an array of zeros in the shape of whatever is the "first" binary_map in 
     # maps (the fact that dicts are unordered doesn't matter here):
@@ -219,32 +198,24 @@ def combine_maps(maps):
     return combined_map
 
 
-
 def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
     '''
-    Takes an image and distortion parameter M_cam and dist_coeff. Applies 
-    correction for lens distortion, warps it to bird's eye view using M_warp and 
-    dest_vertices, then builds a binary binary_map, combined from binary maps 
-    based on gradient and on color.
+    Takes an image, distortion parameter M_cam and dist_coeff, and destination 
+    vertices and warping matrix for image warping. Applies correction for 
+    lens distortion, warps it to bird's eye view using M_warp and dest_vertices,
+    then builds a binary binary_map, combined from binary maps based on gradient 
+    and on color.
     '''
 
     # Correct for camera distortion:
     img_undist = undistort_image(image, M_cam, dist_coef)
-
-
-    # # Convert warped image to HLS before passing to filters:
-    # hls = cv2.cvtColor(img_undist, cv2.COLOR_RGB2HLS)
 
     # Warp image to bird's eye view:
     img_undist, warped = warp_image(img_undist, M_warp, 
         inverse = False, lines = False,
         source_coords = source_vertices, dest_coords = dest_vertices)
 
-    # # Equalize histogram: convert to HUV then to back RGB
-    # warped_yuv = cv2.cvtColor(warped, cv2.COLOR_RGB2YCrCb)
-    # warped_yuv[:, :, 0] = cv2.equalizeHist(warped_yuv[:, :, 0])
-    # warped_hls = cv2.cvtColor(warped_yuv, cv2.COLOR_RGB2HLS)
-
+    # Convert o
     warped_hls = cv2.cvtColor(warped, cv2.COLOR_RGB2HLS)
 
     warped_s = warped_hls[:,:,2]  # Isolate S channel for gradient calculations
@@ -252,19 +223,14 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
     # Make binary maps from x gradient:
     x_binary, x_sobel  = make_grad_map(warped_s, orient = 'x', 
         sobel_kernel = 21, thresh = thresh_x)
-    # y_binary, y_sobel = make_grad_map(warped, orient = 'y', 
-    #     sobel_kernel = 7, thresh = (10, 100))
-    # mag_binary = make_grad_mag_map(x_sobel, y_sobel, thresh = (10, 100))
-    # dir_binary = make_grad_dir_map(x_sobel, y_sobel, thresh = (0, 15))
 
     # Make binary maps from hue, lightness and saturation:
-
     yellows = make_channel_map(warped_hls, thresh = thresh_h, channel = 0, 
         scale_to = 180)  # H-channel scaled to [0, 180] (not [0, 255])
     lightness = make_channel_map(warped_hls, thresh = thresh_l, channel = 1)
     saturation = make_channel_map(warped_hls, thresh = thresh_s, channel = 2)
 
-    # Combine into a single binary binary_map:
+    # Combine into a single binary map:
     maps = {'grad_x': x_binary, 
             'hue': yellows,
             'light': lightness,
@@ -276,11 +242,27 @@ def global_binary_map(image, M_cam, dist_coef, M_warp, dest_vertices):
 
 
 
-#*******************************************************************************
+#********************** Line finding and fitting *********************************
 
 def window_search(binary_map):
     '''
-    binary_map is a warped binary map, one channel only.
+    Takes a binary map and uses a sliding windows algorithm to identify active
+    pixels that form left and right line candidates. It then fits a polynomial to 
+    each and computes the base line positions and radii of curvature.
+
+    binary_map: A warped binary map, one channel only.
+    Returns:
+    - out_img:  The binary map overlaid with a projection of the fitted lines
+                and with left- and right-line candidate pixels colored in red
+                and green respectively
+    - lane_img: A filled polygon representing the area between the left and right
+                lines, colored in blue
+    - position: The estimated position of the car relative to the centre of the 
+                lane
+    - radius:   The estimated radius of curvature of the lane (averaged between 
+                the left and right lines)
+
+
     '''
     # Make histogram
     histogram = np.sum(binary_map[int(binary_map.shape[0] / 2):, :], axis = 0)
@@ -395,6 +377,23 @@ def window_search(binary_map):
 
 
 def search_around_line(binary_map):
+    '''
+    Takes a binary map and looks around the previously fitted left and right
+    lines for pixels that form line candidates. It then fits a polynomial to 
+    each and computes the base line positions and radii of curvature.
+
+    binary_map: A warped binary map, one channel only.
+    Returns:
+    - out_img:  The binary map overlaid with a projection of the fitted lines
+                and with left- and right-line candidate pixels colored in red
+                and green respectively
+    - lane_img: A filled polygon representing the area between the left and right
+                lines, colored in blue
+    - position: The estimated position of the car relative to the centre of the 
+                lane
+    - radius:   The estimated radius of curvature of the lane (averaged between 
+                the left and right lines)
+    '''
 
     # Get image size:
     img_size = (binary_map.shape[1], binary_map.shape[0])
@@ -501,6 +500,7 @@ def search_around_line(binary_map):
     return out_img, lane_img, position, radius
 
 
+# ******** Convolutional search: Found to be less effective, so ignored **********
 
 # def window_mask(width, height, center, level):
 #     output = np.zeros((img_size[1], img_size[0]), dtype = 'uint8')
@@ -604,35 +604,41 @@ def search_around_line(binary_map):
 #     plt.title('window fitting results')
 #     plt.savefig('./test_images/convo_test_' + str(file_index) + '.png')
 
+# *********************** Image composition **************************************
 
 def compose_image(images, sub_size_ratio = 0.3):
     '''
-    Takes a list  of images whose first element is considered as the main image.
+    Takes a list of images whose first element is considered as the main image.
     Sub-images are then overlaid on top of the main image with width and height 
     equal to 'sub_image_size' * main image size. The main image must be 3 deep.
+    The images to overlay as sub-images mush have the same size as the main image.
 
     Returns the composite image.
     '''
-    sub_size = np.int32(sub_size_ratio * np.array(img_size))  # ratio * (1280,720)
+
+    # Define size of the sub_images:
+    sub_size = np.int32(sub_size_ratio * np.array(img_size))
+    # Max number of sub-images accross the width of the main image:
     n_cols = int(np.floor(1 / sub_size_ratio))
+
+    # Make a copy of the original image:
     composed = np.copy(images[0])
 
-    if (1.*sub_size[1] / sub_size[0] <= img_size[1] / img_size[0] - 0.01) \
-            | (1.*sub_size[1] / sub_size[0] >= img_size[1] / img_size[0] + 0.01):
-            print("Error: Image ratio mush be equal to the original image's.")
-            return
-
     for i, img in enumerate(images[1:]):       
+        # Determine horizontal and vertical position within the main image:
         id_row = i // n_cols
         id_col = i % n_cols
 
-        top_left_x = id_col * sub_size[0]  # id_col * (512)
-        top_left_y = id_row * sub_size[1]  # id_col * (288)
+        # Start from the top-left corner of the main image:
+        top_left_x = id_col * sub_size[0]
+        top_left_y = id_row * sub_size[1]
         
+        # Resize sub-image to its new dimensions and scale it consistently with 
+        # the main image (otherwise it won't be displayed correctly):
         img_mini = scale_map(cv2.resize(img, None, fx = sub_size_ratio, 
             fy = sub_size_ratio), max_value = 255, dtype = 'uint8')
 
-        if (len(img_mini.shape) == 2):
+        if (len(img_mini.shape) == 2): # If sub-image is only 1-deep, stack 3
             composed[top_left_y : top_left_y + sub_size[1], 
                      top_left_x : top_left_x + sub_size[0], 
                      :] = np.dstack((img_mini, img_mini, img_mini))
@@ -644,19 +650,38 @@ def compose_image(images, sub_size_ratio = 0.3):
     return composed
 
 def lambda_wrapper(img, M_cam, dist_coef, M_warp, dest_vertices, 
-    file_index = None, sub_size_ratio = .4):
+    sub_size_ratio = .4):
+    '''
+    A wrapper function that can be passed to VideoFileClip.fl_image()
+    - img:      Original frame
+    - M_cam:    Camera distortion matrix
+    - dist_coef: Camera distortion coefficients
+    - M_warp:   Warp matrix (to bird's eye view)
+    - dest_vertices: Destination vertices (source vertices transformed by the warp
+                operation
+    - sub_size_ratio: Size of the sub-images overlaid on the main frame, in 
+                proportion to the main image's dimensions
 
+    Returns:    A single image, composed from the original image, the colored
+                binary map with fitted lines overlay, and the curve radius and
+                position on lane as text.
 
+    '''
+
+    # Make a binary map using the globally-defined thresholds:
     bin_map = global_binary_map(img, M_cam, dist_coef, M_warp, dest_vertices)[0]
 
+    # As long as we found a valid line less than n_search frames ago, search 
+    # around it:
     if (len(line_left.last_n_fits.items) > 0) & \
         (len(line_right.last_n_fits.items) > 0) & \
         (line_left.frames_since_detection <= n_search) & \
         (line_right.frames_since_detection <= n_search):
         img_lines, lane_img, position, radius = search_around_line(bin_map)
-    else:
+    else:  # Otherwise do a full sliding window search:
         img_lines, lane_img, position, radius = window_search(bin_map)
 
+    # Unwarp the image containing the lane projection:
     lane_img, lane_unwarped = warp_image(lane_img, M_warp, 
         source_coords = source_vertices, dest_coords = dest_vertices, 
         inverse = True, lines = True)
@@ -664,6 +689,8 @@ def lambda_wrapper(img, M_cam, dist_coef, M_warp, dest_vertices,
     # Overlay the unwarped detected lane over the original image:
     out_img = cv2.addWeighted(img, 1, lane_unwarped, 0.3, 0)
 
+    # Add a sub_image of the binary map with colored left and right lanes and 
+    # detection zones:
     composed = compose_image([out_img, img_lines], sub_size_ratio = .4)
     
     # Add text to indicate position in lane and curvature radius:
@@ -685,25 +712,20 @@ if __name__ == '__main__':
         M_cam = pickle.load(pkl)
         dist_coef = pickle.load(pkl)
 
-    # Define global variables:
+    #************************* Define global variables ***************************
+
     img_size = (1280, 720)
 
     # Conversion ratio from pixels to meters on the road (width):
     pix_to_m = 5.7 / img_size[0]
 
-    # For video 1:
+    # Position of the source vertices for image warping:
     source_vertices = np.float32([[0, 670],
                                   [538, 460],
                                   [752, 460],
                                   [1280, 670]])
 
-    #For video 2:
-    # source_vertices = np.float32([[0, 670],
-    #                               [559, 482],
-    #                               [721, 482], 
-    #                               [1280, 670]])
-
-    # Binary map thresholds:
+    # Binary map thresholds:²
     thresh_x = (30, 100)
     thresh_h = (18, 23)
     thresh_l = (100, 255)
@@ -729,76 +751,12 @@ if __name__ == '__main__':
         n_fits, n_search, pos_tol = .3, rad_tol = 0.5)
 
 
-
-
+    # ********************** Process movie clip **********************************
     # Calculate warping parameters:
     M_warp, dest_vertices = get_warp_matrix(img_size, source_vertices)
 
     # Load movie file to work on:
-
     clip_in = VideoFileClip('project_video.mp4')
     clip_out = clip_in.fl_image(lambda x: lambda_wrapper(x, M_cam, dist_coef,
-        M_warp, dest_vertices, file_index = None, sub_size_ratio = .4))
+        M_warp, dest_vertices, sub_size_ratio = .4))
     clip_out.write_videofile('project_video_test.mp4', audio = False)
-
-    # file_index = 0
-    
-    # path_names = glob.glob('./short_test_images/*.jpg')
-    # for path in path_names:
-    #     # Isolate file name without extension:
-    #     file_name = path.split('/')[-1].split('.')[0]
-    #     print("Processing ", file_name)
-    #     img = mpimg.imread(path)
-
-    #     combined_map, img_undist, warped_hls, warped_s, \
-    #         x_binary, yellows, lightness, saturation = global_binary_map(img, 
-    #                                     M_cam, dist_coef, M_warp, dest_vertices)
-
-        # binary_map, _, _, _, _, _, _, _, _ = global_binary_map(img, M_cam, 
-        # dist_coef, M_warp, dest_vertices)
-        # binary_map_mini = scale_map(cv2.resize(binary_map, (384, 216)), max_value = 255, 
-        #     dtype = 'uint8')
-
-        # composed = np.copy(img)
-        # composed[:216, :384, :] = np.dstack((binary_map_mini, binary_map_mini, binary_map_mini))
-
-        # img_lines = window_search(combined_map, 
-        #     file_index = None)
-        # convolutional_search(binary_map, file_index = file_index)
-        # composed = compose_image([img, img_lines], sub_size_ratio = .4)
-        # f = plt.figure(figsize = (12.80,7.20), dpi = 100)
-        # plt.imshow(composed)
-        # f.savefig('./test_images/' + file_name + '_composed.png')
-        # file_index += 1
-
-        # display_images([composed], n_cols = 1, 
-        #     write_path = './test_images/' + file_name + '_composed.png')
-
-        # display_images([img, 
-        #                 warped_hls,
-        #                 warped_hls[:,:,1],
-        #                 warped_s,
-        #                 x_binary, 
-        #                 yellows,
-        #                 lightness,
-        #                 saturation,
-        #                 combined_map,
-        #                 img_lines
-        #                 ], 
-        #                 titles = [
-        #                 "img", 
-        #                 "warped_hls",
-        #                  "warped l",
-        #                 "warped_s",
-        #                 "x_binary", 
-        #                 "yellows",
-        #                 "lightness",
-        #                 "saturation",
-        #                 "combined_map",
-        #                 "img_lines"
-        #                 ],
-                        
-        #     n_cols = 4 
-        #     , write_path = './short_test_images/' + file_name + '_results.png'
-        #     )
-

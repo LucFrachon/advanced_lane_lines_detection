@@ -13,7 +13,7 @@ import pickle
 def display_images(images, titles = None, n_cols = 2, fig_size = (20, 10),
     write_path = None):
     '''
-    Helper function to display several images as sublots.
+    Helper function to display several images as sublots - very useful in testing.
     images:     A list of images (each an np.array). Each image can have 1 or 3 
                 channels
     titles:     A list of image titles to use. Defaults to empty strings.
@@ -135,23 +135,28 @@ def undistort_image(image, M_cam, dist_coeff):
 if __name__ == '__main__':
     
     images = []
+    
+    # Get all calibratin images:
     file_names = glob.glob("./camera_cal/calibration*.jpg")
     for f_name in file_names:
         images.append(mpimg.imread(f_name))
 
+    # Calculate parameters:
     ret, M_cam, dist_coeff = get_distortion_params(images, (9, 6))
 
+    # Save these parameters as a Pickle:
     with open('calibration_params.pkl', 'wb') as pkl:
         pickle.dump(M_cam, pkl)
         pickle.dump(dist_coeff, pkl)
 
-    test_images = [images[0], images[3], images[11], images[17]]
-    to_display = []
-    for img in test_images:
-        to_display.append(img)
-        to_display.append(undistort_image(img, M_cam, dist_coeff))
 
-    display_images(to_display, 
-        titles = ["Original", "Undistorted"] * int(len(to_display) / 2), 
-        fig_size = (20, 25), 
-        write_path = "./camera_cal/result.png")
+    # test_images = [images[0], images[3], images[11], images[17]]
+    # to_display = []
+    # for img in test_images:
+    #     to_display.append(img)
+    #     to_display.append(undistort_image(img, M_cam, dist_coeff))
+
+    # display_images(to_display, 
+    #     titles = ["Original", "Undistorted"] * int(len(to_display) / 2), 
+    #     fig_size = (20, 25), 
+    #     write_path = "./camera_cal/result.png")
