@@ -55,8 +55,8 @@ def display_images(images, titles = None, n_cols = 2, fig_size = (20, 10),
         else:
             axes[id_row, id_col].imshow(img)
         # Display title in a fontsize dependent on the figure size:
-        axes[id_row, id_col].set_title(titles[i], fontsize = fig_size[0])
-        
+        axes[id_row, id_col].set_title(titles[i], fontsize = fig_size[0] * 0.8)
+         
     # Fill figure with blank images if not all subplots were used:
     for i in range(len(images), n_rows * n_cols): 
         id_row = i // n_cols
