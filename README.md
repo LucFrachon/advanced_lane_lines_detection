@@ -27,3 +27,8 @@ How to use
 
 This pipeline works well on the project video but further work is required before it performs well on the other two.
 
+More detail
+---
+
+Read `project_writeup.md` for full details of the tools, techniques and reasoning behind this project.
+
