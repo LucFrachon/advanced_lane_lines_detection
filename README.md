@@ -19,4 +19,11 @@ The repository contains a number of files, some useful, some less so:
 - `test_images`: Images to test the pipeline on.
 - `output_images`: Various images produced by different parts of the pipeline and used to illustrate `project_writeup.md`.
 
+How to use
+---
+
+- Camera calibration parameters are provided in a pickle file (`calibration_params.pkl`) but if you want to recompute them, run `./camera_calibration.py`. Make sure you have execution rights on the file first.
+- Then run `./lane_detection_pipeline.py`. By default, the code runs on `project_video.mp4`. The video file name is hard-coded into the .py file at the moment.
+
 This pipeline works well on the project video but further work is required before it performs well on the other two.
+
